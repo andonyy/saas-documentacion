@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
-const OBSIDIAN_DIR = process.env.OBSIDIAN_VAULT_PATH || path.join(require('os').homedir(), 'ObsidianVault', 'Facturas', 'Procesadas');
+const OBSIDIAN_DIR = process.env.OBSIDIAN_VAULT_PATH || path.join(require('os').homedir(), 'ObsidianVault', '30 Documentos fuente');
 
 function val(v) {
   return v != null ? v : 'N/A';
@@ -12,9 +12,11 @@ function buildFrontmatter(documentId, data) {
   const lines = [];
   lines.push('---');
   lines.push(`id: "${documentId}"`);
-  lines.push(`tags: [factura, procesada]`);
+  lines.push(`tags: [documento-fuente, factura]`);
+  lines.push(`tipo: factura`);
+  lines.push(`origen: "procesado por invoice-processor"`);
+  lines.push(`fecha_documento: "${val(data.date)}"`);
   lines.push(`invoice_number: "${val(data.invoiceNumber)}"`);
-  lines.push(`date: "${val(data.date)}"`);
   lines.push(`due_date: "${val(data.dueDate)}"`);
   lines.push(`sender: "${data.sender ? val(data.sender.name) : 'N/A'}"`);
   lines.push(`receiver: "${data.receiver ? val(data.receiver.name) : 'N/A'}"`);
