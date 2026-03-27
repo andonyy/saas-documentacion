@@ -1,40 +1,8 @@
-const Anthropic = require('@anthropic-ai/sdk');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const client = new Anthropic();
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-function buildContentBlock(base64Data, mediaType) {
-  if (mediaType === 'application/pdf') {
-    return {
-      type: 'document',
-      source: {
-        type: 'base64',
-        media_type: 'application/pdf',
-        data: base64Data,
-      },
-    };
-  }
-  return {
-    type: 'image',
-    source: {
-      type: 'base64',
-      media_type: mediaType,
-      data: base64Data,
-    },
-  };
-}
-
-async function extractInvoiceData(base64Data, mediaType) {
-  const message = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 4096,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          buildContentBlock(base64Data, mediaType),
-          {
-            type: 'text',
-            text: `Extrae todos los datos de esta factura o documento. Devuelve un objeto JSON con estos campos:
+const PROMPT = `Extrae todos los datos de esta factura o documento. Devuelve un objeto JSON con estos campos:
 {
   "title": "título del documento o etiqueta de factura",
   "invoiceNumber": "...",
@@ -51,14 +19,22 @@ async function extractInvoiceData(base64Data, mediaType) {
   "paymentTerms": "...",
   "notes": "..."
 }
-Usa null para campos no encontrados. Devuelve SOLO el JSON, sin bloques de código markdown.`,
-          },
-        ],
-      },
-    ],
-  });
+Usa null para campos no encontrados. Devuelve SOLO el JSON, sin bloques de código markdown.`;
 
-  const responseText = message.content[0].text;
+async function extractInvoiceData(base64Data, mediaType) {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        mimeType: mediaType,
+        data: base64Data,
+      },
+    },
+    PROMPT,
+  ]);
+
+  const responseText = result.response.text();
 
   try {
     return JSON.parse(responseText);
@@ -67,7 +43,7 @@ Usa null para campos no encontrados. Devuelve SOLO el JSON, sin bloques de códi
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
     }
-    throw new Error('No se pudo parsear la respuesta de Claude como JSON');
+    throw new Error('No se pudo parsear la respuesta de Gemini como JSON');
   }
 }
 

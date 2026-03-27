@@ -118,4 +118,11 @@ function getDocument(documentId) {
   return fs.readFileSync(filePath, 'utf-8');
 }
 
-module.exports = { generateMarkdown, updateTitle, listDocuments, getDocument };
+function deleteDocument(documentId) {
+  const filePath = path.join(OUTPUT_DIR, `${documentId}.md`);
+  if (!fs.existsSync(filePath)) return false;
+  fs.unlinkSync(filePath);
+  return true;
+}
+
+module.exports = { generateMarkdown, updateTitle, listDocuments, getDocument, deleteDocument };

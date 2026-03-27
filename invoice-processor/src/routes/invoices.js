@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { extractInvoiceData } = require('../services/anthropic');
-const { generateMarkdown, updateTitle, listDocuments, getDocument } = require('../services/markdown');
+const { generateMarkdown, updateTitle, listDocuments, getDocument, deleteDocument } = require('../services/markdown');
 
 const router = express.Router();
 
@@ -60,6 +60,43 @@ router.get('/', (req, res) => {
   res.json(documents);
 });
 
+// GET /search?q=texto - Buscar documentos por contenido
+router.get('/search', (req, res) => {
+  const query = req.query.q;
+  if (!query) {
+    return res.status(400).json({ error: 'Se requiere el parámetro de búsqueda ?q=' });
+  }
+  const documents = listDocuments();
+  const results = documents.filter(doc => {
+    const content = getDocument(doc.id);
+    return content && content.toLowerCase().includes(query.toLowerCase());
+  });
+  res.json(results);
+});
+
+// POST /batch - Subir múltiples documentos
+router.post('/batch', upload.array('documents', 20), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No se proporcionaron documentos' });
+    }
+
+    const results = [];
+    for (const file of req.files) {
+      const fileBuffer = fs.readFileSync(file.path);
+      const base64Data = fileBuffer.toString('base64');
+      const extractedData = await extractInvoiceData(base64Data, file.mimetype);
+      const documentId = uuidv4();
+      const filename = generateMarkdown(documentId, extractedData);
+      results.push({ id: documentId, filename, data: extractedData });
+    }
+
+    res.status(201).json({ processed: results.length, documents: results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /:id - Obtener un documento markdown
 router.get('/:id', (req, res) => {
   const content = getDocument(req.params.id);
@@ -67,6 +104,17 @@ router.get('/:id', (req, res) => {
     return res.status(404).json({ error: 'Documento no encontrado' });
   }
   res.set('Content-Type', 'text/markdown; charset=utf-8');
+  res.send(content);
+});
+
+// GET /:id/download - Descargar markdown como archivo
+router.get('/:id/download', (req, res) => {
+  const content = getDocument(req.params.id);
+  if (!content) {
+    return res.status(404).json({ error: 'Documento no encontrado' });
+  }
+  res.set('Content-Type', 'text/markdown; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="${req.params.id}.md"`);
   res.send(content);
 });
 
@@ -83,6 +131,15 @@ router.put('/:id/title', (req, res) => {
   }
 
   res.json({ id: req.params.id, title: newTitle });
+});
+
+// DELETE /:id - Eliminar un documento
+router.delete('/:id', (req, res) => {
+  const deleted = deleteDocument(req.params.id);
+  if (!deleted) {
+    return res.status(404).json({ error: 'Documento no encontrado' });
+  }
+  res.json({ message: 'Documento eliminado', id: req.params.id });
 });
 
 module.exports = router;
