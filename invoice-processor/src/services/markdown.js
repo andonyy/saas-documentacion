@@ -2,12 +2,32 @@ const fs = require('fs');
 const path = require('path');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
+const OBSIDIAN_DIR = process.env.OBSIDIAN_VAULT_PATH || path.join(require('os').homedir(), 'ObsidianVault', 'Facturas', 'Procesadas');
 
 function val(v) {
   return v != null ? v : 'N/A';
 }
 
-function generateMarkdown(documentId, data) {
+function buildFrontmatter(documentId, data) {
+  const lines = [];
+  lines.push('---');
+  lines.push(`id: "${documentId}"`);
+  lines.push(`tags: [factura, procesada]`);
+  lines.push(`invoice_number: "${val(data.invoiceNumber)}"`);
+  lines.push(`date: "${val(data.date)}"`);
+  lines.push(`due_date: "${val(data.dueDate)}"`);
+  lines.push(`sender: "${data.sender ? val(data.sender.name) : 'N/A'}"`);
+  lines.push(`receiver: "${data.receiver ? val(data.receiver.name) : 'N/A'}"`);
+  lines.push(`total: ${data.total != null ? data.total : 0}`);
+  lines.push(`currency: "${val(data.currency)}"`);
+  lines.push(`status: "procesada"`);
+  lines.push(`created: "${new Date().toISOString()}"`);
+  lines.push('---');
+  lines.push('');
+  return lines.join('\n');
+}
+
+function buildMarkdownBody(documentId, data) {
   const lines = [];
 
   lines.push(`# ${val(data.title)}`);
@@ -76,9 +96,25 @@ function generateMarkdown(documentId, data) {
     lines.push('');
   }
 
-  const content = lines.join('\n');
-  const filePath = path.join(OUTPUT_DIR, `${documentId}.md`);
-  fs.writeFileSync(filePath, content, 'utf-8');
+  return lines.join('\n');
+}
+
+function generateMarkdown(documentId, data) {
+  const frontmatter = buildFrontmatter(documentId, data);
+  const body = buildMarkdownBody(documentId, data);
+  const content = frontmatter + body;
+
+  // Save to local output
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  const localPath = path.join(OUTPUT_DIR, `${documentId}.md`);
+  fs.writeFileSync(localPath, content, 'utf-8');
+
+  // Save to Obsidian vault
+  fs.mkdirSync(OBSIDIAN_DIR, { recursive: true });
+  const title = data.title || documentId;
+  const safeTitle = title.replace(/[<>:"/\\|?*]/g, '-').substring(0, 100);
+  const obsidianPath = path.join(OBSIDIAN_DIR, `${safeTitle}.md`);
+  fs.writeFileSync(obsidianPath, content, 'utf-8');
 
   return `${documentId}.md`;
 }
@@ -90,7 +126,31 @@ function updateTitle(documentId, newTitle) {
   const content = fs.readFileSync(filePath, 'utf-8');
   const updated = content.replace(/^# .+/m, `# ${newTitle}`);
   fs.writeFileSync(filePath, updated, 'utf-8');
+
+  // Update in Obsidian too - find by id in frontmatter
+  syncToObsidian(documentId, updated, newTitle);
+
   return newTitle;
+}
+
+function syncToObsidian(documentId, content, title) {
+  if (!fs.existsSync(OBSIDIAN_DIR)) return;
+
+  // Remove old file with this ID
+  const files = fs.readdirSync(OBSIDIAN_DIR).filter(f => f.endsWith('.md'));
+  for (const f of files) {
+    const fPath = path.join(OBSIDIAN_DIR, f);
+    const fContent = fs.readFileSync(fPath, 'utf-8');
+    if (fContent.includes(`id: "${documentId}"`)) {
+      fs.unlinkSync(fPath);
+      break;
+    }
+  }
+
+  // Write new file with updated title
+  const safeTitle = (title || documentId).replace(/[<>:"/\\|?*]/g, '-').substring(0, 100);
+  const obsidianPath = path.join(OBSIDIAN_DIR, `${safeTitle}.md`);
+  fs.writeFileSync(obsidianPath, content, 'utf-8');
 }
 
 function listDocuments() {
@@ -121,6 +181,21 @@ function getDocument(documentId) {
 function deleteDocument(documentId) {
   const filePath = path.join(OUTPUT_DIR, `${documentId}.md`);
   if (!fs.existsSync(filePath)) return false;
+
+  // Also delete from Obsidian
+  const content = fs.readFileSync(filePath, 'utf-8');
+  if (fs.existsSync(OBSIDIAN_DIR)) {
+    const files = fs.readdirSync(OBSIDIAN_DIR).filter(f => f.endsWith('.md'));
+    for (const f of files) {
+      const fPath = path.join(OBSIDIAN_DIR, f);
+      const fContent = fs.readFileSync(fPath, 'utf-8');
+      if (fContent.includes(`id: "${documentId}"`)) {
+        fs.unlinkSync(fPath);
+        break;
+      }
+    }
+  }
+
   fs.unlinkSync(filePath);
   return true;
 }
