@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facturas - OCR a Obsidian</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a1a2e;
+      border-bottom: 1px solid #2a2a4a;
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header h1 {
+      font-size: 1.3rem;
+      color: #a78bfa;
+      font-weight: 600;
+    }
+
+    header .status {
+      font-size: 0.8rem;
+      color: #666;
+    }
+
+    header .status.online { color: #4ade80; }
+    header .status.offline { color: #f87171; }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+    }
+
+    .panel {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    .panel h2 {
+      font-size: 1rem;
+      color: #a78bfa;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #2a2a2a;
+    }
+
+    /* Upload zone */
+    .upload-zone {
+      border: 2px dashed #3a3a5a;
+      border-radius: 10px;
+      padding: 3rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: #a78bfa;
+      background: #1a1a2e;
+    }
+
+    .upload-zone svg {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 1rem;
+      color: #666;
+    }
+
+    .upload-zone p {
+      color: #888;
+      font-size: 0.9rem;
+    }
+
+    .upload-zone .hint {
+      font-size: 0.75rem;
+      color: #555;
+      margin-top: 0.5rem;
+    }
+
+    .upload-zone input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    /* Preview */
+    .preview {
+      margin-top: 1rem;
+      display: none;
+    }
+
+    .preview img {
+      max-width: 100%;
+      max-height: 300px;
+      border-radius: 8px;
+      border: 1px solid #2a2a2a;
+    }
+
+    .preview .filename {
+      font-size: 0.8rem;
+      color: #888;
+      margin-top: 0.5rem;
+    }
+
+    /* Button */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: #7c3aed;
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.2s;
+      margin-top: 1rem;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .btn:hover { background: #6d28d9; }
+    .btn:disabled { background: #333; cursor: not-allowed; color: #666; }
+
+    /* Progress */
+    .progress {
+      display: none;
+      margin-top: 1rem;
+    }
+
+    .progress-bar {
+      height: 4px;
+      background: #2a2a2a;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .progress-bar .fill {
+      height: 100%;
+      background: #a78bfa;
+      border-radius: 2px;
+      transition: width 0.3s;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .progress .step {
+      font-size: 0.8rem;
+      color: #888;
+      margin-top: 0.5rem;
+    }
+
+    /* Results */
+    .result {
+      display: none;
+    }
+
+    .result .success {
+      background: #052e16;
+      border: 1px solid #166534;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .result .success h3 {
+      color: #4ade80;
+      font-size: 0.9rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .result .success p {
+      color: #86efac;
+      font-size: 0.8rem;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    .data-table th {
+      text-align: left;
+      padding: 0.5rem;
+      color: #a78bfa;
+      border-bottom: 1px solid #2a2a2a;
+      font-weight: 500;
+    }
+
+    .data-table td {
+      padding: 0.5rem;
+      border-bottom: 1px solid #1a1a2a;
+      color: #ccc;
+    }
+
+    .data-table td:first-child {
+      color: #888;
+      width: 40%;
+    }
+
+    /* History */
+    .history-list {
+      list-style: none;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .history-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem;
+      border-bottom: 1px solid #1a1a2a;
+      font-size: 0.85rem;
+      transition: background 0.15s;
+    }
+
+    .history-list li:hover { background: #222; }
+
+    .history-list .title { color: #e0e0e0; }
+    .history-list .date { color: #666; font-size: 0.75rem; }
+    .history-list .total { color: #4ade80; font-weight: 500; }
+
+    .empty {
+      color: #555;
+      text-align: center;
+      padding: 2rem;
+      font-size: 0.85rem;
+    }
+
+    /* Full width panels */
+    .full-width { grid-column: 1 / -1; }
+
+    /* Error */
+    .error {
+      background: #2d0a0a;
+      border: 1px solid #7f1d1d;
+      border-radius: 8px;
+      padding: 1rem;
+      color: #fca5a5;
+      font-size: 0.85rem;
+      margin-top: 1rem;
+      display: none;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .container { grid-template-columns: 1fr; padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Facturas OCR</h1>
+    <span class="status" id="serverStatus">Conectando...</span>
+  </header>
+
+  <div class="container">
+
+    <!-- Upload panel -->
+    <div class="panel">
+      <h2>Subir factura</h2>
+
+      <div class="upload-zone" id="uploadZone">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16"/>
+        </svg>
+        <p>Arrastra una foto o haz clic para seleccionar</p>
+        <p class="hint">JPG, PNG, WebP - max 10 MB</p>
+        <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp">
+      </div>
+
+      <div class="preview" id="preview">
+        <img id="previewImg" alt="Preview">
+        <p class="filename" id="previewName"></p>
+      </div>
+
+      <button class="btn" id="processBtn" disabled>
+        Procesar y guardar en Obsidian
+      </button>
+
+      <div class="progress" id="progress">
+        <div class="progress-bar"><div class="fill" id="progressFill" style="width: 0%"></div></div>
+        <p class="step" id="progressStep">Preparando...</p>
+      </div>
+
+      <div class="error" id="error"></div>
+    </div>
+
+    <!-- Result panel -->
+    <div class="panel">
+      <h2>Resultado</h2>
+
+      <div class="result" id="result">
+        <div class="success">
+          <h3>Guardado en Obsidian</h3>
+          <p id="savedPath"></p>
+        </div>
+
+        <table class="data-table" id="dataTable">
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="empty" id="resultEmpty">
+        Sube una factura para ver los datos extraidos
+      </div>
+    </div>
+
+    <!-- History panel -->
+    <div class="panel full-width">
+      <h2>Documentos procesados</h2>
+      <ul class="history-list" id="historyList">
+        <li class="empty">Cargando...</li>
+      </ul>
+    </div>
+
+  </div>
+
+  <script>
+    const API = 'http://localhost:3000';
+
+    // Elements
+    const fileInput = document.getElementById('fileInput');
+    const uploadZone = document.getElementById('uploadZone');
+    const preview = document.getElementById('preview');
+    const previewImg = document.getElementById('previewImg');
+    const previewName = document.getElementById('previewName');
+    const processBtn = document.getElementById('processBtn');
+    const progress = document.getElementById('progress');
+    const progressFill = document.getElementById('progressFill');
+    const progressStep = document.getElementById('progressStep');
+    const result = document.getElementById('result');
+    const resultEmpty = document.getElementById('resultEmpty');
+    const dataTable = document.getElementById('dataTable').querySelector('tbody');
+    const savedPath = document.getElementById('savedPath');
+    const errorDiv = document.getElementById('error');
+    const historyList = document.getElementById('historyList');
+    const serverStatus = document.getElementById('serverStatus');
+
+    let selectedFile = null;
+
+    // Server status
+    async function checkServer() {
+      try {
+        const r = await fetch(`${API}/health`);
+        if (r.ok) {
+          serverStatus.textContent = 'Servidor OK';
+          serverStatus.className = 'status online';
+        }
+      } catch {
+        serverStatus.textContent = 'Servidor offline';
+        serverStatus.className = 'status offline';
+      }
+    }
+
+    // File selection
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      selectFile(file);
+    });
+
+    // Drag & drop
+    uploadZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('dragover');
+    });
+
+    uploadZone.addEventListener('dragleave', () => {
+      uploadZone.classList.remove('dragover');
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) selectFile(file);
+    });
+
+    function selectFile(file) {
+      if (file.size > 10 * 1024 * 1024) {
+        showError('El archivo es demasiado grande (max 10 MB)');
+        return;
+      }
+      selectedFile = file;
+      previewImg.src = URL.createObjectURL(file);
+      previewName.textContent = file.name;
+      preview.style.display = 'block';
+      processBtn.disabled = false;
+      errorDiv.style.display = 'none';
+      result.style.display = 'none';
+      resultEmpty.style.display = 'block';
+    }
+
+    // Process
+    processBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+
+      processBtn.disabled = true;
+      progress.style.display = 'block';
+      errorDiv.style.display = 'none';
+      result.style.display = 'none';
+      resultEmpty.style.display = 'none';
+
+      try {
+        updateProgress(10, 'Subiendo imagen...');
+
+        const formData = new FormData();
+        formData.append('document', selectedFile);
+
+        updateProgress(30, 'OCR en proceso (EasyOCR + GPU)...');
+
+        const response = await fetch(`${API}/api/invoices/`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        updateProgress(80, 'Guardando en Obsidian...');
+
+        if (!response.ok) {
+          const err = await response.json();
+          throw new Error(err.error || 'Error procesando la factura');
+        }
+
+        const data = await response.json();
+        updateProgress(100, 'Completado');
+
+        showResult(data);
+        loadHistory();
+
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        setTimeout(() => {
+          progress.style.display = 'none';
+          processBtn.disabled = false;
+        }, 1000);
+      }
+    });
+
+    function updateProgress(pct, step) {
+      progressFill.style.width = `${pct}%`;
+      progressStep.textContent = step;
+    }
+
+    function showResult(data) {
+      const d = data.data;
+      result.style.display = 'block';
+      resultEmpty.style.display = 'none';
+
+      savedPath.textContent = `30 Documentos fuente / ${data.filename}`;
+
+      const rows = [
+        ['Establecimiento', d.title],
+        ['N. Factura', d.invoiceNumber],
+        ['Fecha', d.date],
+        ['NIF/CIF', d.sender?.taxId],
+        ['Direccion', d.sender?.address],
+        ['Concepto', d.lineItems?.map(i => i.description).join(', ')],
+        ['Precio unitario', d.lineItems?.map(i => i.unitPrice).join(', ')],
+        ['Subtotal', d.subtotal],
+        ['IVA', `${d.taxRate} (${d.taxAmount})`],
+        ['Total', d.total + ' ' + (d.currency || 'EUR')],
+        ['Pago', d.paymentTerms],
+      ];
+
+      dataTable.innerHTML = rows
+        .filter(([_, v]) => v != null && v !== 'null' && v !== '')
+        .map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`)
+        .join('');
+    }
+
+    function showError(msg) {
+      errorDiv.textContent = msg;
+      errorDiv.style.display = 'block';
+    }
+
+    // History
+    async function loadHistory() {
+      try {
+        const r = await fetch(`${API}/api/invoices/`);
+        const docs = await r.json();
+
+        if (!docs.length) {
+          historyList.innerHTML = '<li class="empty">No hay documentos procesados</li>';
+          return;
+        }
+
+        docs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        historyList.innerHTML = docs.map(doc => `
+          <li>
+            <div>
+              <span class="title">${doc.title || doc.filename}</span>
+              <br><span class="date">${new Date(doc.createdAt).toLocaleString('es-ES')}</span>
+            </div>
+          </li>
+        `).join('');
+      } catch {
+        historyList.innerHTML = '<li class="empty">Error cargando historial</li>';
+      }
+    }
+
+    // Init
+    checkServer();
+    loadHistory();
+    setInterval(checkServer, 10000);
+  </script>
+</body>
+</html>

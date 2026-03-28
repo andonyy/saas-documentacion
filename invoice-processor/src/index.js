@@ -11,6 +11,19 @@ const invoiceRoutes = require('./routes/invoices');
 const app = express();
 app.use(express.json());
 
+// CORS para el frontend
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+
+// Servir frontend
+const frontDir = path.join(__dirname, '..', '..', 'front');
+app.use(express.static(frontDir));
+
 fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
 fs.mkdirSync(path.join(__dirname, 'output'), { recursive: true });
 

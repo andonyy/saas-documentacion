@@ -1,50 +1,19 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-const PROMPT = `Extrae todos los datos de esta factura o documento. Devuelve un objeto JSON con estos campos:
-{
-  "title": "título del documento o etiqueta de factura",
-  "invoiceNumber": "...",
-  "date": "...",
-  "dueDate": "...",
-  "sender": { "name": "...", "address": "...", "taxId": "..." },
-  "receiver": { "name": "...", "address": "...", "taxId": "..." },
-  "lineItems": [{ "description": "...", "quantity": 0, "unitPrice": 0, "total": 0 }],
-  "subtotal": 0,
-  "taxRate": "...",
-  "taxAmount": 0,
-  "total": 0,
-  "currency": "...",
-  "paymentTerms": "...",
-  "notes": "..."
-}
-Usa null para campos no encontrados. Devuelve SOLO el JSON, sin bloques de código markdown.`;
+const OCR_URL = process.env.OCR_URL || 'http://localhost:5555';
 
 async function extractInvoiceData(base64Data, mediaType) {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const response = await fetch(`${OCR_URL}/ocr`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: base64Data }),
+  });
 
-  const result = await model.generateContent([
-    {
-      inlineData: {
-        mimeType: mediaType,
-        data: base64Data,
-      },
-    },
-    PROMPT,
-  ]);
-
-  const responseText = result.response.text();
-
-  try {
-    return JSON.parse(responseText);
-  } catch {
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-    throw new Error('No se pudo parsear la respuesta de Gemini como JSON');
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`OCR Server error (${response.status}): ${error}`);
   }
+
+  const result = await response.json();
+  return result.data;
 }
 
 module.exports = { extractInvoiceData };
