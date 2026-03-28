@@ -36,4 +36,8 @@ app.use('/api/invoices', invoiceRoutes);
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Invoice processor running on http://localhost:${PORT}`);
+
+  // Arrancar Telegram bot si hay token
+  const { startTelegramBot } = require('./services/telegram');
+  startTelegramBot();
 });

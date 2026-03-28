@@ -128,9 +128,13 @@ Crear un archivo `.env` en `invoice-processor/`:
 ```env
 OBSIDIAN_VAULT_PATH=C:\Users\TU_USUARIO\ObsidianVault\30 Documentos fuente
 PORT=3000
+TELEGRAM_BOT_TOKEN=tu_token_de_botfather
+TELEGRAM_ALLOWED_USERS=tu_telegram_user_id
 ```
 
-Si no configuras `OBSIDIAN_VAULT_PATH`, usa por defecto `~/ObsidianVault/30 Documentos fuente`.
+- `OBSIDIAN_VAULT_PATH`: Si no se configura, usa por defecto `~/ObsidianVault/30 Documentos fuente`.
+- `TELEGRAM_BOT_TOKEN`: Token del bot creado con @BotFather en Telegram. Sin token, el bot no arranca (el resto funciona normal).
+- `TELEGRAM_ALLOWED_USERS`: IDs de usuario separados por comas. Si no se configura, el bot acepta mensajes de cualquiera. Para saber tu ID, envia `/start` al bot.
 
 ### 8. Configurar el launcher (.bat)
 
@@ -172,7 +176,17 @@ node src/index.js
 
 Abre `http://localhost:3000` en el navegador.
 
-### Opcion C: Solo CLI (sin navegador)
+### Opcion C: Telegram (desde el movil)
+
+Envia una foto de un ticket al bot `@AndoniFacturasOcr_bot` en Telegram. El bot procesa la imagen con OCR y guarda el resultado en Obsidian automaticamente.
+
+Requisitos:
+1. Configurar `TELEGRAM_BOT_TOKEN` y `TELEGRAM_ALLOWED_USERS` en `.env`
+2. El servidor Node.js y el servidor OCR deben estar corriendo
+
+El bot arranca automaticamente con el servidor Node.js. Acepta fotos y documentos (JPG, PNG, WebP, PDF).
+
+### Opcion D: Solo CLI (sin navegador)
 
 ```bash
 conda activate ocr
@@ -202,6 +216,7 @@ Saas documentacion/
   |     +-- src/
   |     |     +-- index.js               # Express server + CORS + static files
   |     |     +-- ocr_engine.py          # Motor OCR Python (EasyOCR + OpenCV)
+  |     |     +-- ocr-server.py          # Micro-servicio OCR HTTP alternativo
   |     |     |
   |     |     +-- routes/
   |     |     |     +-- invoices.js      # API REST endpoints
@@ -209,6 +224,7 @@ Saas documentacion/
   |     |     +-- services/
   |     |           +-- anthropic.js     # Puente Node -> Python OCR
   |     |           +-- markdown.js      # Generador de markdown + Obsidian sync
+  |     |           +-- telegram.js      # Bot de Telegram para subir fotos desde movil
   |     |
   |     +-- src/output/                  # Copias locales de los markdown
   |     +-- src/uploads/                 # Imagenes subidas temporalmente
@@ -268,6 +284,40 @@ Respuesta:
   }
 }
 ```
+
+---
+
+## Bot de Telegram
+
+El bot permite subir fotos de tickets desde el movil. El flujo es:
+
+```
+Foto en Telegram --> Bot Node.js --> OCR Python --> Obsidian
+                                                --> Respuesta con resumen
+```
+
+### Comandos
+
+| Comando | Descripcion |
+|---------|-------------|
+| `/start` | Muestra bienvenida y tu ID de usuario |
+| Enviar foto | Procesa el ticket con OCR |
+| Enviar documento | Acepta JPG, PNG, WebP y PDF |
+
+### Configuracion
+
+1. Crear un bot con [@BotFather](https://t.me/BotFather) en Telegram
+2. Copiar el token en `.env` como `TELEGRAM_BOT_TOKEN`
+3. Enviar `/start` al bot para obtener tu ID de usuario
+4. Poner tu ID en `.env` como `TELEGRAM_ALLOWED_USERS`
+
+El bot arranca automaticamente con el servidor Node.js. Si no hay token configurado, simplemente no arranca (sin errores).
+
+### Seguridad
+
+- Solo los usuarios en `TELEGRAM_ALLOWED_USERS` pueden usar el bot
+- Si la lista esta vacia, el bot acepta mensajes de cualquiera
+- Los archivos descargados se eliminan despues de procesarlos
 
 ---
 
@@ -407,3 +457,4 @@ El motor valida automaticamente que `total = subtotal + IVA`. Si el OCR lee mal 
 | Sharp | 0.33+ | Procesado de imagen en Node |
 | Multer | 1.x | Upload de archivos |
 | Obsidian | - | Vault de documentos |
+| node-telegram-bot-api | 0.67 | Bot de Telegram |
