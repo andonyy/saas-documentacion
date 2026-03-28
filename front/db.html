@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Base de Datos - Facturas OCR</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a1a2e;
+      border-bottom: 1px solid #2a2a4a;
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      color: #a78bfa;
+      font-weight: 600;
+    }
+
+    header .nav {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    header .nav a {
+      color: #888;
+      text-decoration: none;
+      font-size: 0.85rem;
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    header .nav a:hover { color: #a78bfa; background: rgba(167,139,250,0.1); }
+    header .nav a.active { color: #a78bfa; background: rgba(167,139,250,0.15); }
+
+    .stats-bar {
+      background: #141420;
+      border-bottom: 1px solid #1e1e30;
+      padding: 0.8rem 2rem;
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .stat-label {
+      font-size: 0.7rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #c4b5fd;
+    }
+
+    .toolbar {
+      padding: 1rem 2rem;
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .search-box {
+      flex: 1;
+      min-width: 200px;
+      max-width: 400px;
+      position: relative;
+    }
+
+    .search-box input {
+      width: 100%;
+      padding: 0.6rem 1rem 0.6rem 2.2rem;
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-box input:focus { border-color: #a78bfa; }
+
+    .search-box::before {
+      content: "\1F50D";
+      position: absolute;
+      left: 0.7rem;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.8rem;
+      opacity: 0.5;
+    }
+
+    .sort-btn {
+      padding: 0.5rem 1rem;
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 8px;
+      color: #aaa;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .sort-btn:hover { border-color: #a78bfa; color: #c4b5fd; }
+    .sort-btn.active { border-color: #a78bfa; color: #a78bfa; background: rgba(167,139,250,0.1); }
+
+    .container {
+      padding: 0 2rem 2rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.5rem;
+    }
+
+    thead th {
+      text-align: left;
+      padding: 0.7rem 1rem;
+      font-size: 0.75rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #1e1e30;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+
+    thead th:hover { color: #a78bfa; }
+    thead th.sorted { color: #a78bfa; }
+    thead th .arrow { margin-left: 4px; font-size: 0.65rem; }
+
+    tbody tr {
+      border-bottom: 1px solid #1a1a1a;
+      transition: background 0.15s;
+      cursor: pointer;
+    }
+
+    tbody tr:hover { background: #1a1a2e; }
+
+    tbody td {
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+      vertical-align: middle;
+    }
+
+    .col-title {
+      font-weight: 500;
+      color: #e0e0e0;
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .col-nif { font-family: 'Cascadia Code', 'Fira Code', monospace; color: #888; font-size: 0.8rem; }
+    .col-date { color: #aaa; white-space: nowrap; }
+    .col-total { font-weight: 600; color: #4ade80; text-align: right; white-space: nowrap; }
+    .col-status { text-align: center; }
+
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 12px;
+      font-size: 0.7rem;
+      font-weight: 500;
+    }
+
+    .badge-ok { background: rgba(74,222,128,0.12); color: #4ade80; }
+    .badge-pending { background: rgba(251,191,36,0.12); color: #fbbf24; }
+
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: #555;
+    }
+
+    .empty-state h2 { font-size: 1.2rem; margin-bottom: 0.5rem; color: #666; }
+    .empty-state p { font-size: 0.9rem; }
+
+    .loading {
+      text-align: center;
+      padding: 4rem;
+      color: #666;
+    }
+
+    .loading::after {
+      content: '';
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #333;
+      border-top-color: #a78bfa;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 0.5rem;
+      vertical-align: middle;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Modal detalle */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 3rem 1rem;
+      overflow-y: auto;
+    }
+
+    .modal-overlay.open { display: flex; }
+
+    .modal {
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 12px;
+      max-width: 700px;
+      width: 100%;
+      padding: 2rem;
+      position: relative;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: none;
+      border: none;
+      color: #666;
+      font-size: 1.5rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    .modal-close:hover { color: #e0e0e0; }
+
+    .modal h2 {
+      color: #c4b5fd;
+      font-size: 1.2rem;
+      margin-bottom: 1.5rem;
+      padding-right: 2rem;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .detail-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .detail-label { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+    .detail-value { font-size: 0.9rem; color: #e0e0e0; }
+
+    .detail-section {
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid #2a2a4a;
+    }
+
+    .detail-section h3 {
+      font-size: 0.85rem;
+      color: #888;
+      margin-bottom: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .items-table th {
+      text-align: left;
+      padding: 0.4rem 0.6rem;
+      font-size: 0.7rem;
+      color: #666;
+      border-bottom: 1px solid #2a2a4a;
+    }
+
+    .items-table td {
+      padding: 0.4rem 0.6rem;
+      font-size: 0.8rem;
+      border-bottom: 1px solid #1e1e30;
+    }
+
+    .items-table .num { text-align: right; font-family: monospace; }
+
+    .totals-block {
+      margin-top: 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.3rem;
+    }
+
+    .totals-block .row {
+      display: flex;
+      gap: 2rem;
+      font-size: 0.85rem;
+    }
+
+    .totals-block .row-label { color: #888; }
+    .totals-block .row-value { font-family: monospace; min-width: 80px; text-align: right; }
+    .totals-block .total-row { font-weight: 700; font-size: 1rem; color: #4ade80; }
+
+    .modal-actions {
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid #2a2a4a;
+      display: flex;
+      gap: 0.8rem;
+      justify-content: flex-end;
+    }
+
+    .btn {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      border: 1px solid #2a2a4a;
+      background: #1a1a2e;
+      color: #aaa;
+      transition: all 0.2s;
+    }
+
+    .btn:hover { border-color: #a78bfa; color: #c4b5fd; }
+    .btn-danger:hover { border-color: #f87171; color: #f87171; }
+
+    @media (max-width: 768px) {
+      .container { padding: 0 1rem 1rem; }
+      .toolbar { padding: 0.8rem 1rem; }
+      .stats-bar { padding: 0.6rem 1rem; gap: 1rem; flex-wrap: wrap; }
+      header { padding: 0.8rem 1rem; }
+      .detail-grid { grid-template-columns: 1fr; }
+      .col-nif, .col-date { display: none; }
+      table { font-size: 0.8rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Base de Datos de Facturas</h1>
+  <div class="nav">
+    <a href="/">Subir factura</a>
+    <a href="/db.html" class="active">Base de datos</a>
+    <a href="/vault.html">Vault</a>
+    <a href="/gastos.html">Gastos</a>
+  </div>
+</header>
+
+<div class="stats-bar">
+  <div class="stat">
+    <span class="stat-label">Total facturas</span>
+    <span class="stat-value" id="stat-count">-</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Importe total</span>
+    <span class="stat-value" id="stat-total">-</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Ultima factura</span>
+    <span class="stat-value" id="stat-latest">-</span>
+  </div>
+</div>
+
+<div class="toolbar">
+  <div class="search-box">
+    <input type="text" id="search" placeholder="Buscar por nombre, NIF, fecha...">
+  </div>
+  <button class="sort-btn active" data-sort="date">Fecha</button>
+  <button class="sort-btn" data-sort="total">Importe</button>
+  <button class="sort-btn" data-sort="name">Nombre</button>
+</div>
+
+<div class="container">
+  <div id="loading" class="loading">Cargando facturas</div>
+  <div id="empty" class="empty-state" style="display:none">
+    <h2>Sin facturas</h2>
+    <p>Sube una foto desde la web o por Telegram para empezar.</p>
+  </div>
+  <table id="invoices-table" style="display:none">
+    <thead>
+      <tr>
+        <th>Emisor</th>
+        <th>NIF/CIF</th>
+        <th>Fecha</th>
+        <th>Pago</th>
+        <th style="text-align:right">Total</th>
+        <th style="text-align:center">Estado</th>
+      </tr>
+    </thead>
+    <tbody id="invoices-body"></tbody>
+  </table>
+</div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <button class="modal-close" id="modal-close">&times;</button>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<script>
+const API = '/api/invoices';
+let allInvoices = [];
+let currentSort = 'date';
+let sortDir = -1;
+
+async function loadInvoices() {
+  try {
+    const res = await fetch(API);
+    const docs = await res.json();
+
+    // Cargar detalle de cada documento para extraer frontmatter
+    const details = await Promise.all(docs.map(async (doc) => {
+      try {
+        const r = await fetch(`${API}/${doc.id}`);
+        const md = await r.text();
+        return parseMarkdown(doc, md);
+      } catch {
+        return { ...doc, data: {} };
+      }
+    }));
+
+    allInvoices = details;
+    updateStats();
+    renderTable();
+  } catch (err) {
+    document.getElementById('loading').textContent = 'Error al cargar: ' + err.message;
+  }
+}
+
+function parseMarkdown(doc, md) {
+  const fm = {};
+  const fmMatch = md.match(/^---\n([\s\S]*?)\n---/);
+  if (fmMatch) {
+    fmMatch[1].split('\n').forEach(line => {
+      const m = line.match(/^(\w[\w_]*)\s*:\s*(.+)/);
+      if (m) {
+        let val = m[2].trim().replace(/^"(.*)"$/, '$1');
+        fm[m[1]] = val;
+      }
+    });
+  }
+
+  // Extraer items de la tabla de lineas
+  const items = [];
+  const itemLines = md.match(/\| \d+ \|.+\|/g);
+  if (itemLines) {
+    itemLines.forEach(line => {
+      const cols = line.split('|').map(c => c.trim()).filter(Boolean);
+      if (cols.length >= 5) {
+        items.push({
+          description: cols[1],
+          quantity: cols[2],
+          unitPrice: cols[3],
+          total: cols[4]
+        });
+      }
+    });
+  }
+
+  // Extraer totales
+  const subtotalMatch = md.match(/Subtotal\s*\|\s*([^\s|]+)/);
+  const taxMatch = md.match(/Impuesto\s*\(([^)]*)\)\s*\|\s*([^\s|]+)/);
+  const totalMatch = md.match(/\*\*Total\*\*\s*\|\s*\*\*([^*]+)\*\*/);
+  const paymentMatch = md.match(/Condiciones de Pago:\*\*\s*(.+)/);
+
+  return {
+    id: doc.id,
+    title: doc.title,
+    createdAt: doc.createdAt,
+    sender: fm.sender || 'N/A',
+    date: fm.fecha_documento || 'N/A',
+    invoiceNumber: fm.invoice_number || 'N/A',
+    total: parseFloat(fm.total) || 0,
+    currency: fm.currency || 'EUR',
+    status: fm.status || 'procesada',
+    taxId: '',
+    payment: paymentMatch ? paymentMatch[1].trim() : '',
+    items: items,
+    subtotal: subtotalMatch ? subtotalMatch[1] : '0',
+    taxRate: taxMatch ? taxMatch[1] : 'N/A',
+    taxAmount: taxMatch ? taxMatch[2] : '0',
+    raw: md
+  };
+}
+
+function updateStats() {
+  document.getElementById('stat-count').textContent = allInvoices.length;
+  const sum = allInvoices.reduce((a, b) => a + b.total, 0);
+  document.getElementById('stat-total').textContent = sum.toFixed(2) + ' EUR';
+  if (allInvoices.length > 0) {
+    const sorted = [...allInvoices].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    document.getElementById('stat-latest').textContent = sorted[0].sender !== 'N/A' ? sorted[0].sender : sorted[0].title;
+  }
+}
+
+function renderTable() {
+  const loading = document.getElementById('loading');
+  const empty = document.getElementById('empty');
+  const table = document.getElementById('invoices-table');
+  const tbody = document.getElementById('invoices-body');
+
+  loading.style.display = 'none';
+
+  const query = document.getElementById('search').value.toLowerCase();
+  let filtered = allInvoices.filter(inv => {
+    if (!query) return true;
+    return (inv.sender + inv.title + inv.date + inv.taxId + inv.invoiceNumber + inv.payment)
+      .toLowerCase().includes(query);
+  });
+
+  // Ordenar
+  filtered.sort((a, b) => {
+    if (currentSort === 'date') return sortDir * (new Date(a.createdAt) - new Date(b.createdAt));
+    if (currentSort === 'total') return sortDir * (a.total - b.total);
+    if (currentSort === 'name') return sortDir * (a.sender || '').localeCompare(b.sender || '');
+    return 0;
+  });
+
+  if (filtered.length === 0) {
+    table.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+
+  empty.style.display = 'none';
+  table.style.display = 'table';
+
+  // Extraer NIF del raw markdown
+  filtered.forEach(inv => {
+    if (!inv.taxId) {
+      const nifMatch = inv.raw.match(/NIF\/CIF\s*\|\s*([^\s|]+)/);
+      if (nifMatch && nifMatch[1] !== 'N/A') inv.taxId = nifMatch[1];
+    }
+  });
+
+  tbody.innerHTML = filtered.map(inv => `
+    <tr data-id="${inv.id}">
+      <td class="col-title">${esc(inv.sender !== 'N/A' ? inv.sender : inv.title)}</td>
+      <td class="col-nif">${esc(inv.taxId || '-')}</td>
+      <td class="col-date">${esc(inv.date !== 'N/A' ? inv.date : '-')}</td>
+      <td style="color:#888;font-size:0.8rem">${esc(inv.payment || '-')}</td>
+      <td class="col-total">${inv.total > 0 ? inv.total.toFixed(2) + ' ' + inv.currency : '-'}</td>
+      <td class="col-status"><span class="badge badge-ok">${inv.status}</span></td>
+    </tr>
+  `).join('');
+
+  // Click en fila para ver detalle
+  tbody.querySelectorAll('tr').forEach(tr => {
+    tr.addEventListener('click', () => {
+      const inv = allInvoices.find(i => i.id === tr.dataset.id);
+      if (inv) showDetail(inv);
+    });
+  });
+}
+
+function showDetail(inv) {
+  const modal = document.getElementById('modal');
+  const content = document.getElementById('modal-content');
+
+  let itemsHtml = '';
+  if (inv.items.length > 0) {
+    itemsHtml = `
+      <div class="detail-section">
+        <h3>Conceptos</h3>
+        <table class="items-table">
+          <thead><tr><th>Descripcion</th><th>Cant.</th><th class="num">P.Unit</th><th class="num">Total</th></tr></thead>
+          <tbody>
+            ${inv.items.map(it => `
+              <tr>
+                <td>${esc(it.description)}</td>
+                <td>${esc(it.quantity)}</td>
+                <td class="num">${esc(it.unitPrice)}</td>
+                <td class="num">${esc(it.total)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  content.innerHTML = `
+    <h2>${esc(inv.sender !== 'N/A' ? inv.sender : inv.title)}</h2>
+    <div class="detail-grid">
+      <div class="detail-item">
+        <span class="detail-label">N. Factura</span>
+        <span class="detail-value">${esc(inv.invoiceNumber)}</span>
+      </div>
+      <div class="detail-item">
+        <span class="detail-label">Fecha</span>
+        <span class="detail-value">${esc(inv.date)}</span>
+      </div>
+      <div class="detail-item">
+        <span class="detail-label">NIF/CIF</span>
+        <span class="detail-value">${esc(inv.taxId || 'N/A')}</span>
+      </div>
+      <div class="detail-item">
+        <span class="detail-label">Forma de pago</span>
+        <span class="detail-value">${esc(inv.payment || 'N/A')}</span>
+      </div>
+    </div>
+    ${itemsHtml}
+    <div class="totals-block">
+      <div class="row"><span class="row-label">Subtotal</span><span class="row-value">${esc(inv.subtotal)}</span></div>
+      <div class="row"><span class="row-label">${esc(inv.taxRate)}</span><span class="row-value">${esc(inv.taxAmount)}</span></div>
+      <div class="row total-row"><span class="row-label">Total</span><span class="row-value">${inv.total.toFixed(2)} ${inv.currency}</span></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="downloadInvoice('${inv.id}')">Descargar .md</button>
+      <button class="btn btn-danger" onclick="deleteInvoice('${inv.id}')">Eliminar</button>
+    </div>
+  `;
+
+  modal.classList.add('open');
+}
+
+function esc(str) {
+  if (!str) return '';
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+async function downloadInvoice(id) {
+  window.open(`${API}/${id}/download`, '_blank');
+}
+
+async function deleteInvoice(id) {
+  if (!confirm('Eliminar esta factura? Se borra de local y de Obsidian.')) return;
+  await fetch(`${API}/${id}`, { method: 'DELETE' });
+  document.getElementById('modal').classList.remove('open');
+  allInvoices = allInvoices.filter(i => i.id !== id);
+  updateStats();
+  renderTable();
+}
+
+// Event listeners
+document.getElementById('search').addEventListener('input', renderTable);
+
+document.querySelectorAll('.sort-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const sort = btn.dataset.sort;
+    if (currentSort === sort) {
+      sortDir *= -1;
+    } else {
+      currentSort = sort;
+      sortDir = sort === 'name' ? 1 : -1;
+    }
+    document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderTable();
+  });
+});
+
+document.getElementById('modal-close').addEventListener('click', () => {
+  document.getElementById('modal').classList.remove('open');
+});
+
+document.getElementById('modal').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') document.getElementById('modal').classList.remove('open');
+});
+
+// Init
+loadInvoices();
+</script>
+</body>
+</html>

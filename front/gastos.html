@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard de Gastos</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a1a2e;
+      border-bottom: 1px solid #2a2a4a;
+      padding: 0.7rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header h1 { font-size: 1.2rem; color: #a78bfa; font-weight: 600; }
+
+    .nav { display: flex; gap: 0.8rem; align-items: center; }
+    .nav a {
+      color: #888; text-decoration: none; font-size: 0.8rem;
+      padding: 0.35rem 0.7rem; border-radius: 6px; transition: all 0.2s;
+    }
+    .nav a:hover { color: #a78bfa; background: rgba(167,139,250,0.1); }
+    .nav a.active { color: #a78bfa; background: rgba(167,139,250,0.15); }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.5rem 2rem;
+    }
+
+    /* KPI cards */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .kpi {
+      background: #141420;
+      border: 1px solid #1e1e30;
+      border-radius: 10px;
+      padding: 1.2rem;
+    }
+
+    .kpi-label {
+      font-size: 0.7rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.4rem;
+    }
+
+    .kpi-value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #e0e0e0;
+    }
+
+    .kpi-sub {
+      font-size: 0.75rem;
+      color: #555;
+      margin-top: 0.3rem;
+    }
+
+    .kpi-value.green { color: #4ade80; }
+    .kpi-value.yellow { color: #fbbf24; }
+    .kpi-value.purple { color: #c4b5fd; }
+
+    /* Chart area */
+    .panels {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .panel {
+      background: #141420;
+      border: 1px solid #1e1e30;
+      border-radius: 10px;
+      padding: 1.2rem;
+    }
+
+    .panel-title {
+      font-size: 0.8rem;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 1rem;
+      font-weight: 600;
+    }
+
+    /* Bar chart */
+    .chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 6px;
+      height: 200px;
+      padding-top: 1rem;
+    }
+
+    .bar-group {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100%;
+      justify-content: flex-end;
+    }
+
+    .bar {
+      width: 100%;
+      max-width: 40px;
+      background: linear-gradient(to top, #7c3aed, #a78bfa);
+      border-radius: 4px 4px 0 0;
+      transition: all 0.3s;
+      cursor: pointer;
+      position: relative;
+      min-height: 2px;
+    }
+
+    .bar:hover { background: linear-gradient(to top, #8b5cf6, #c4b5fd); }
+
+    .bar-label {
+      font-size: 0.65rem;
+      color: #666;
+      margin-top: 0.4rem;
+      text-align: center;
+    }
+
+    .bar-value {
+      font-size: 0.65rem;
+      color: #aaa;
+      margin-bottom: 0.3rem;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    .bar-tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 6px;
+      padding: 0.4rem 0.6rem;
+      font-size: 0.7rem;
+      white-space: nowrap;
+      z-index: 10;
+      color: #e0e0e0;
+    }
+
+    .bar:hover .bar-tooltip { display: block; }
+
+    /* Top list */
+    .top-list {
+      list-style: none;
+    }
+
+    .top-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    .top-item:last-child { border-bottom: none; }
+
+    .top-name {
+      font-size: 0.85rem;
+      color: #ccc;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .top-count {
+      font-size: 0.7rem;
+      color: #666;
+      margin: 0 0.5rem;
+    }
+
+    .top-amount {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #4ade80;
+      white-space: nowrap;
+    }
+
+    .top-bar-bg {
+      height: 3px;
+      background: #1a1a2e;
+      border-radius: 2px;
+      margin-top: 0.3rem;
+    }
+
+    .top-bar-fill {
+      height: 100%;
+      background: linear-gradient(to right, #7c3aed, #a78bfa);
+      border-radius: 2px;
+    }
+
+    /* Month detail table */
+    .detail-panel {
+      background: #141420;
+      border: 1px solid #1e1e30;
+      border-radius: 10px;
+      padding: 1.2rem;
+    }
+
+    .month-selector {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+
+    .month-btn {
+      padding: 0.35rem 0.7rem;
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 6px;
+      color: #888;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .month-btn:hover { border-color: #a78bfa; color: #c4b5fd; }
+    .month-btn.active { border-color: #a78bfa; color: #a78bfa; background: rgba(167,139,250,0.1); }
+
+    .detail-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .detail-table th {
+      text-align: left;
+      padding: 0.5rem 0.8rem;
+      font-size: 0.7rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 2px solid #1e1e30;
+    }
+
+    .detail-table th.right { text-align: right; }
+
+    .detail-table td {
+      padding: 0.5rem 0.8rem;
+      font-size: 0.82rem;
+      border-bottom: 1px solid #1a1a1a;
+      color: #ccc;
+    }
+
+    .detail-table td.right { text-align: right; }
+    .detail-table td.amount { color: #4ade80; font-weight: 600; font-family: monospace; }
+    .detail-table td.date-col { color: #888; white-space: nowrap; }
+
+    .detail-table tr:hover td { background: rgba(167,139,250,0.03); }
+
+    .month-total {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 0.8rem;
+      padding-top: 0.8rem;
+      border-top: 2px solid #1e1e30;
+    }
+
+    .month-total-label { font-size: 0.85rem; color: #888; font-weight: 600; }
+    .month-total-value { font-size: 1.3rem; font-weight: 700; color: #4ade80; }
+
+    .empty-month {
+      text-align: center;
+      padding: 2rem;
+      color: #555;
+      font-size: 0.9rem;
+    }
+
+    .loading { text-align: center; padding: 3rem; color: #666; }
+
+    @media (max-width: 768px) {
+      .kpi-row { grid-template-columns: repeat(2, 1fr); }
+      .panels { grid-template-columns: 1fr; }
+      .container { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Dashboard de Gastos</h1>
+  <div class="nav">
+    <a href="/">Subir factura</a>
+    <a href="/db.html">Base de datos</a>
+    <a href="/vault.html">Vault</a>
+    <a href="/gastos.html" class="active">Gastos</a>
+  </div>
+</header>
+
+<div class="container">
+  <div id="loading" class="loading">Cargando datos...</div>
+
+  <div id="dashboard" style="display:none">
+    <!-- KPIs -->
+    <div class="kpi-row">
+      <div class="kpi">
+        <div class="kpi-label">Gasto este mes</div>
+        <div class="kpi-value green" id="kpi-month">-</div>
+        <div class="kpi-sub" id="kpi-month-count">-</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Media mensual</div>
+        <div class="kpi-value yellow" id="kpi-avg">-</div>
+        <div class="kpi-sub" id="kpi-avg-sub">-</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Gasto total</div>
+        <div class="kpi-value purple" id="kpi-total">-</div>
+        <div class="kpi-sub" id="kpi-total-count">-</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Ticket medio</div>
+        <div class="kpi-value" id="kpi-ticket">-</div>
+        <div class="kpi-sub" id="kpi-ticket-sub">-</div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="panels">
+      <div class="panel">
+        <div class="panel-title">Gasto por mes</div>
+        <div class="chart" id="chart"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Top establecimientos</div>
+        <ul class="top-list" id="top-list"></ul>
+      </div>
+    </div>
+
+    <!-- Detail -->
+    <div class="detail-panel">
+      <div class="panel-title">Detalle de facturas</div>
+      <div class="month-selector" id="month-selector"></div>
+      <div id="detail-content"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api/vault';
+let allInvoices = [];
+let monthlyData = {};
+let selectedMonth = null;
+
+const MONTH_NAMES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+async function init() {
+  try {
+    // Load all notes from 30 Documentos fuente
+    const res = await fetch(`${API}/tree`);
+    const tree = await res.json();
+    const docsFolder = tree.find(f => f.name === '30 Documentos fuente');
+    if (!docsFolder || !docsFolder.children) {
+      document.getElementById('loading').textContent = 'No hay documentos fuente';
+      return;
+    }
+
+    // Load each note and parse invoice data
+    const files = docsFolder.children.filter(f => f.type === 'file');
+    const notes = await Promise.all(files.map(async f => {
+      const r = await fetch(`${API}/note?path=${encodeURIComponent(f.path)}`);
+      const { content } = await r.json();
+      return parseInvoice(f.name, content);
+    }));
+
+    allInvoices = notes.filter(n => n.total > 0).sort((a, b) => b.dateObj - a.dateObj);
+
+    // Group by month
+    allInvoices.forEach(inv => {
+      const key = inv.monthKey;
+      if (!monthlyData[key]) monthlyData[key] = { invoices: [], total: 0 };
+      monthlyData[key].invoices.push(inv);
+      monthlyData[key].total += inv.total;
+    });
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+
+    renderKPIs();
+    renderChart();
+    renderTopList();
+    renderMonthSelector();
+
+  } catch (err) {
+    document.getElementById('loading').textContent = 'Error: ' + err.message;
+  }
+}
+
+function parseInvoice(name, md) {
+  const fm = {};
+  const fmMatch = md.match(/^---\n([\s\S]*?)\n---/);
+  if (fmMatch) {
+    fmMatch[1].split('\n').forEach(line => {
+      const m = line.match(/^(\w[\w_]*)\s*:\s*(.+)/);
+      if (m) {
+        let val = m[2].trim().replace(/^"(.*)"$/, '$1');
+        fm[m[1]] = val;
+      }
+    });
+  }
+
+  const total = parseFloat(fm.total) || 0;
+  const sender = fm.sender || fm.origen || name;
+  const currency = fm.currency || 'EUR';
+
+  // Parse date - try multiple formats
+  let dateObj = new Date();
+  const dateStr = fm.fecha_documento || fm.date || '';
+  if (dateStr) {
+    // Format: YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      dateObj = new Date(dateStr);
+    }
+    // Format: DD/MM/YYYY
+    else if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+      const [d, m, y] = dateStr.split('/');
+      dateObj = new Date(`${y}-${m}-${d}`);
+    }
+  }
+
+  const month = dateObj.getMonth();
+  const year = dateObj.getFullYear();
+  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+
+  // Extract tax info
+  const taxMatch = md.match(/IVA\s*(\d+)%/i);
+  const taxRate = taxMatch ? taxMatch[1] + '%' : fm.iva || '';
+
+  // Extract payment method
+  const payMatch = md.match(/forma_pago:\s*"?([^"\n]+)/);
+  const payment = payMatch ? payMatch[1].trim() : '';
+
+  return {
+    name,
+    sender,
+    total,
+    currency,
+    date: dateStr,
+    dateObj,
+    month,
+    year,
+    monthKey,
+    monthLabel: `${MONTH_NAMES[month]} ${year}`,
+    taxRate,
+    payment,
+    invoiceNumber: fm.invoice_number || ''
+  };
+}
+
+function renderKPIs() {
+  const now = new Date();
+  const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const currentMonth = monthlyData[currentKey];
+  const totalAll = allInvoices.reduce((s, i) => s + i.total, 0);
+  const months = Object.keys(monthlyData);
+  const avgMonthly = months.length > 0 ? totalAll / months.length : 0;
+  const avgTicket = allInvoices.length > 0 ? totalAll / allInvoices.length : 0;
+
+  document.getElementById('kpi-month').textContent = (currentMonth ? currentMonth.total.toFixed(2) : '0.00') + ' EUR';
+  document.getElementById('kpi-month-count').textContent = currentMonth ? `${currentMonth.invoices.length} facturas` : 'Sin facturas';
+
+  document.getElementById('kpi-avg').textContent = avgMonthly.toFixed(2) + ' EUR';
+  document.getElementById('kpi-avg-sub').textContent = `${months.length} meses con datos`;
+
+  document.getElementById('kpi-total').textContent = totalAll.toFixed(2) + ' EUR';
+  document.getElementById('kpi-total-count').textContent = `${allInvoices.length} facturas`;
+
+  document.getElementById('kpi-ticket').textContent = avgTicket.toFixed(2) + ' EUR';
+
+  // Find max and min ticket
+  if (allInvoices.length > 0) {
+    const max = Math.max(...allInvoices.map(i => i.total));
+    const min = Math.min(...allInvoices.map(i => i.total));
+    document.getElementById('kpi-ticket-sub').textContent = `Min ${min.toFixed(2)} / Max ${max.toFixed(2)}`;
+  }
+}
+
+function renderChart() {
+  const chart = document.getElementById('chart');
+  const months = Object.keys(monthlyData).sort();
+
+  if (months.length === 0) {
+    chart.innerHTML = '<div style="color:#555;text-align:center;width:100%">Sin datos</div>';
+    return;
+  }
+
+  // Fill gaps between first and last month
+  const allMonths = [];
+  if (months.length > 0) {
+    const [firstY, firstM] = months[0].split('-').map(Number);
+    const [lastY, lastM] = months[months.length - 1].split('-').map(Number);
+    let y = firstY, m = firstM;
+    while (y < lastY || (y === lastY && m <= lastM)) {
+      const key = `${y}-${String(m).padStart(2, '0')}`;
+      allMonths.push(key);
+      m++;
+      if (m > 12) { m = 1; y++; }
+    }
+  }
+
+  const maxTotal = Math.max(...Object.values(monthlyData).map(d => d.total));
+
+  chart.innerHTML = allMonths.map(key => {
+    const data = monthlyData[key];
+    const total = data ? data.total : 0;
+    const count = data ? data.invoices.length : 0;
+    const pct = maxTotal > 0 ? (total / maxTotal) * 100 : 0;
+    const [y, m] = key.split('-').map(Number);
+    const label = MONTH_NAMES[m - 1];
+    const yearLabel = m === 1 ? `${label} ${y}` : label;
+
+    return `
+      <div class="bar-group" onclick="selectMonth('${key}')">
+        <div class="bar-value">${total > 0 ? total.toFixed(0) : ''}</div>
+        <div class="bar" style="height:${Math.max(pct, 1)}%">
+          <div class="bar-tooltip">${MONTH_NAMES[m-1]} ${y}: ${total.toFixed(2)} EUR (${count} fact.)</div>
+        </div>
+        <div class="bar-label">${yearLabel}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderTopList() {
+  const list = document.getElementById('top-list');
+
+  // Group by sender
+  const bySender = {};
+  allInvoices.forEach(inv => {
+    const key = inv.sender;
+    if (!bySender[key]) bySender[key] = { total: 0, count: 0 };
+    bySender[key].total += inv.total;
+    bySender[key].count++;
+  });
+
+  const sorted = Object.entries(bySender)
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 8);
+
+  if (sorted.length === 0) {
+    list.innerHTML = '<li class="empty-month">Sin datos</li>';
+    return;
+  }
+
+  const maxAmount = sorted[0][1].total;
+
+  list.innerHTML = sorted.map(([name, data]) => {
+    const pct = (data.total / maxAmount) * 100;
+    return `
+      <li class="top-item">
+        <span class="top-name">${esc(name)}</span>
+        <span class="top-count">${data.count}x</span>
+        <span class="top-amount">${data.total.toFixed(2)}</span>
+      </li>
+      <div class="top-bar-bg"><div class="top-bar-fill" style="width:${pct}%"></div></div>
+    `;
+  }).join('');
+}
+
+function renderMonthSelector() {
+  const selector = document.getElementById('month-selector');
+  const months = Object.keys(monthlyData).sort().reverse();
+
+  selector.innerHTML = months.map(key => {
+    const [y, m] = key.split('-').map(Number);
+    const label = `${MONTH_NAMES[m - 1]} ${y}`;
+    return `<button class="month-btn" data-month="${key}" onclick="selectMonth('${key}')">${label}</button>`;
+  }).join('');
+
+  // Select current month or latest
+  const now = new Date();
+  const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  selectMonth(monthlyData[currentKey] ? currentKey : months[0]);
+}
+
+function selectMonth(key) {
+  if (!key || !monthlyData[key]) return;
+  selectedMonth = key;
+
+  // Update buttons
+  document.querySelectorAll('.month-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.month === key);
+  });
+
+  const data = monthlyData[key];
+  const content = document.getElementById('detail-content');
+  const [y, m] = key.split('-').map(Number);
+
+  if (data.invoices.length === 0) {
+    content.innerHTML = '<div class="empty-month">Sin facturas este mes</div>';
+    return;
+  }
+
+  const sorted = [...data.invoices].sort((a, b) => b.dateObj - a.dateObj);
+
+  let tableHtml = `
+    <table class="detail-table">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Establecimiento</th>
+          <th>N. Factura</th>
+          <th>IVA</th>
+          <th>Pago</th>
+          <th class="right">Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sorted.map(inv => `
+          <tr>
+            <td class="date-col">${esc(inv.date || '-')}</td>
+            <td>${esc(inv.sender)}</td>
+            <td style="color:#888;font-size:0.78rem">${esc(inv.invoiceNumber || '-')}</td>
+            <td style="color:#888;font-size:0.78rem">${esc(inv.taxRate || '-')}</td>
+            <td style="color:#888;font-size:0.78rem">${esc(inv.payment || '-')}</td>
+            <td class="right amount">${inv.total.toFixed(2)} ${inv.currency}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div class="month-total">
+      <span class="month-total-label">Total ${MONTH_NAMES[m - 1]} ${y} (${data.invoices.length} facturas)</span>
+      <span class="month-total-value">${data.total.toFixed(2)} EUR</span>
+    </div>
+  `;
+
+  content.innerHTML = tableHtml;
+}
+
+function esc(str) {
+  if (!str) return '';
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,36 +1,39 @@
 # Facturas OCR - Sistema Local
 
-Sistema 100% local para digitalizar tickets y facturas. Sube una foto, extrae los datos con OCR y los guarda automaticamente en tu vault de Obsidian.
+Sistema 100% local para digitalizar tickets y facturas. Sube una foto desde el navegador o desde Telegram, extrae los datos con OCR y los guarda automaticamente en tu vault de Obsidian. Incluye dashboards web para visualizar el vault y controlar gastos mensuales.
 
-**Sin APIs cloud. Sin costes. Todo en tu PC.**
+**Sin APIs cloud. Sin costes. Todo en tu PC. Solo accesible desde localhost.**
 
 ---
 
-## Como funciona
+## Arquitectura
 
 ```
-Foto del ticket
-      |
-      v
-  [Frontend web]  ---->  [Node.js API]  ---->  [Python OCR Server]
-  (localhost:3000)        (puerto 3000)          (puerto 5555)
-                               |                      |
-                               |              EasyOCR + GPU (CUDA)
-                               |              OpenCV preprocesado
-                               |              Regex post-procesado
-                               |                      |
-                               v                      v
-                      [Markdown generator]    Datos estructurados JSON
-                               |
-                               v
-                    Obsidian Vault / 30 Documentos fuente
+                    +------------------+
+                    |   Telegram Bot   |  <-- Fotos desde movil
+                    |  /gastos command |      (solo entrada, no expone puertos)
+                    +--------+---------+
+                             |
+  +---------------+    +-----v------+    +-------------------+
+  | Frontend web  +--->| Node.js API+--->| Python OCR Server |
+  | localhost:3000|    | puerto 3000|    | puerto 5555       |
+  +---------------+    +-----+------+    +-------------------+
+  | index.html    |          |           | EasyOCR + GPU     |
+  | db.html       |          |           | OpenCV preproceso |
+  | vault.html    |          |           | Regex extraccion  |
+  | gastos.html   |          |           +-------------------+
+  +---------------+    +-----v------+
+                       | Obsidian   |
+                       | Vault      |
+                       | (markdown) |
+                       +------------+
 ```
 
 ### Pipeline paso a paso
 
-1. **Subes una foto** desde el navegador (drag & drop o seleccionar archivo)
+1. **Subes una foto** desde el navegador (drag & drop) o Telegram (como documento)
 2. **Node.js** recibe la imagen y la envia al servidor OCR Python
-3. **OpenCV preprocesa** la imagen para maximizar la legibilidad:
+3. **OpenCV preprocesa** la imagen:
    - Convierte a escala de grises
    - Aplica CLAHE (Contrast Limited Adaptive Histogram Equalization)
    - Elimina ruido (fastNlMeansDenoising)
@@ -38,11 +41,18 @@ Foto del ticket
    - Genera 3 variantes con diferentes configuraciones de contraste
 4. **EasyOCR** (con GPU si hay CUDA) lee cada variante de la imagen
 5. **Fusion de detecciones**: agrupa resultados por posicion, elige la mejor lectura de cada zona
-6. **Correccion OCR**: regex que arreglan errores tipicos (caracteres confundidos, nombres vascos/espanoles)
+6. **Correccion OCR**: regex que arreglan errores tipicos (caracteres confundidos)
 7. **Extraccion de datos**: regex especializados extraen NIF, fecha, importes, conceptos, forma de pago
 8. **Validacion numerica**: verifica que total = subtotal + IVA, recalcula si no cuadra
 9. **Genera markdown** con frontmatter YAML y tablas
 10. **Guarda en Obsidian** automaticamente en `30 Documentos fuente/`
+
+### Seguridad
+
+- El servidor web **solo escucha en 127.0.0.1** (no accesible desde otros dispositivos)
+- El bot de Telegram solo acepta mensajes de IDs autorizados
+- El bot hace polling (no expone puertos, no necesita webhook)
+- No se envian datos a ningun servicio externo
 
 ---
 
@@ -71,7 +81,7 @@ Foto del ticket
 ### 1. Clonar el repositorio
 
 ```bash
-git clone <url-del-repo> "Saas documentacion"
+git clone https://github.com/andonyy/saas-documentacion.git "Saas documentacion"
 cd "Saas documentacion"
 ```
 
@@ -82,6 +92,7 @@ Instalar [fnm](https://github.com/Schniz/fnm) o descargar Node.js directamente:
 ```bash
 fnm install 24
 fnm use 24
+node --version  # debe mostrar v24.x
 ```
 
 ### 3. Instalar dependencias Node.js
@@ -91,7 +102,7 @@ cd invoice-processor
 npm install
 ```
 
-Esto instala: express, multer, uuid, dotenv, sharp, tesseract.js
+Esto instala: express, multer, uuid, dotenv, sharp, node-telegram-bot-api
 
 ### 4. Crear entorno Python con Anaconda
 
@@ -111,32 +122,68 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 
 # Si no tienes GPU NVIDIA, instalar version CPU:
 # pip install torch torchvision
+
+# IMPORTANTE: EasyOCR necesita NumPy < 2
+pip install "numpy<2" --force-reinstall
 ```
 
 ### 6. Verificar que CUDA funciona
 
 ```bash
+conda activate ocr
 python -c "import torch; print('CUDA:', torch.cuda.is_available())"
 ```
 
 Debe mostrar `CUDA: True` si tienes GPU NVIDIA con drivers actualizados.
 
-### 7. Configurar Obsidian vault
+### 7. Configurar el archivo .env
 
 Crear un archivo `.env` en `invoice-processor/`:
 
 ```env
-OBSIDIAN_VAULT_PATH=C:\Users\TU_USUARIO\ObsidianVault\30 Documentos fuente
 PORT=3000
+OBSIDIAN_VAULT_PATH=C:\Users\TU_USUARIO\ObsidianVault\30 Documentos fuente
 TELEGRAM_BOT_TOKEN=tu_token_de_botfather
 TELEGRAM_ALLOWED_USERS=tu_telegram_user_id
 ```
 
-- `OBSIDIAN_VAULT_PATH`: Si no se configura, usa por defecto `~/ObsidianVault/30 Documentos fuente`.
-- `TELEGRAM_BOT_TOKEN`: Token del bot creado con @BotFather en Telegram. Sin token, el bot no arranca (el resto funciona normal).
-- `TELEGRAM_ALLOWED_USERS`: IDs de usuario separados por comas. Si no se configura, el bot acepta mensajes de cualquiera. Para saber tu ID, envia `/start` al bot.
+| Variable | Obligatorio | Descripcion |
+|----------|-------------|-------------|
+| `PORT` | No | Puerto del servidor web (defecto: 3000) |
+| `OBSIDIAN_VAULT_PATH` | No | Ruta a la carpeta de documentos en Obsidian. Defecto: `~/ObsidianVault/30 Documentos fuente` |
+| `TELEGRAM_BOT_TOKEN` | No | Token de @BotFather. Sin token, el bot no arranca (el resto funciona) |
+| `TELEGRAM_ALLOWED_USERS` | No | IDs de Telegram separados por comas. Sin IDs, acepta a cualquiera |
 
-### 8. Configurar el launcher (.bat)
+### 8. Configurar el Vault de Obsidian
+
+Crear la estructura de carpetas en tu vault:
+
+```
+ObsidianVault/
+  +-- Dashboard.md
+  +-- 00 Ideas a desarrollar/
+  +-- 10 Proyectos activos/
+  +-- 20 Conocimiento y criterios/
+  +-- 30 Documentos fuente/        <-- aqui se guardan las facturas
+  +-- 40 Personas y entidades/
+  +-- 90 Proyectos archivados/
+  +-- Templates/
+```
+
+El sistema genera automaticamente los archivos markdown en `30 Documentos fuente/`.
+
+### 9. Configurar el bot de Telegram
+
+1. Abrir Telegram y buscar `@BotFather`
+2. Enviar `/newbot` y seguir las instrucciones (nombre y username del bot)
+3. Copiar el token que te da BotFather
+4. Pegarlo en `.env` como `TELEGRAM_BOT_TOKEN`
+5. Arrancar el servidor y enviar `/start` a tu bot
+6. El bot te responde con tu ID de usuario
+7. Poner tu ID en `.env` como `TELEGRAM_ALLOWED_USERS`
+8. Reiniciar el servidor
+
+### 10. Configurar el launcher (.bat)
 
 Edita `Facturas OCR.bat` y cambia las rutas de PYTHON y NODE a las de tu sistema:
 
@@ -145,15 +192,22 @@ set "PYTHON=C:\Users\TU_USUARIO\anaconda3\envs\ocr\python.exe"
 set "NODE=C:\ruta\a\tu\node.exe"
 ```
 
+Para encontrar las rutas:
+
+```cmd
+where python
+where node
+```
+
 ---
 
 ## Uso
 
 ### Opcion A: Doble clic (recomendado)
 
-Ejecuta `Facturas OCR.bat` desde la carpeta `Saas documentacion` o el acceso directo del escritorio.
+Ejecuta `Facturas OCR.bat` desde la carpeta `Saas documentacion`.
 
-Arranca todo automaticamente y abre el navegador.
+Arranca todo automaticamente (OCR Python + Node.js + Telegram bot) y abre el navegador.
 
 ### Opcion B: Manual (dos terminales)
 
@@ -178,13 +232,11 @@ Abre `http://localhost:3000` en el navegador.
 
 ### Opcion C: Telegram (desde el movil)
 
-Envia una foto de un ticket al bot `@AndoniFacturasOcr_bot` en Telegram. El bot procesa la imagen con OCR y guarda el resultado en Obsidian automaticamente.
+Envia una foto de un ticket al bot en Telegram. El bot procesa la imagen con OCR y guarda el resultado en Obsidian automaticamente.
 
-Requisitos:
-1. Configurar `TELEGRAM_BOT_TOKEN` y `TELEGRAM_ALLOWED_USERS` en `.env`
-2. El servidor Node.js y el servidor OCR deben estar corriendo
+**IMPORTANTE**: Enviar como **documento/archivo**, no como foto. Telegram comprime las fotos y el OCR falla. Como documento mantiene la calidad original.
 
-El bot arranca automaticamente con el servidor Node.js. Acepta fotos y documentos (JPG, PNG, WebP, PDF).
+En Telegram: clip adjuntar > Archivo > seleccionar la foto > enviar.
 
 ### Opcion D: Solo CLI (sin navegador)
 
@@ -197,46 +249,91 @@ Muestra el JSON extraido directamente en la terminal.
 
 ---
 
+## Paginas web (localhost:3000)
+
+| Pagina | URL | Descripcion |
+|--------|-----|-------------|
+| Subir factura | `/` (`index.html`) | Frontend para subir fotos con drag & drop |
+| Base de datos | `/db.html` | Tabla con todas las facturas procesadas, busqueda y detalle |
+| Visor Vault | `/vault.html` | Navegador del vault de Obsidian con arbol de carpetas, renderizado de notas, wikilinks clicables, backlinks y grafo de relaciones |
+| Dashboard gastos | `/gastos.html` | KPIs de gasto mensual, grafico por mes, top establecimientos, detalle por mes |
+
+Todas las paginas tienen navegacion entre si en la cabecera.
+
+---
+
+## Bot de Telegram
+
+### Comandos
+
+| Comando | Descripcion |
+|---------|-------------|
+| `/start` | Muestra bienvenida, comandos disponibles y tu ID de usuario |
+| `/gastos` | Resumen de gastos: mes actual, mes anterior, comparativa, acumulado, ticket medio, top establecimientos |
+| Enviar documento | Procesa el ticket con OCR y guarda en Obsidian |
+| Enviar foto | Tambien funciona pero con menos calidad (Telegram comprime) |
+
+### Flujo
+
+```
+Foto en Telegram --> Bot Node.js --> OCR Python --> Obsidian
+                                                --> Respuesta con resumen al chat
+```
+
+### Seguridad
+
+- Solo los usuarios en `TELEGRAM_ALLOWED_USERS` pueden usar el bot
+- El bot usa polling (no webhook), no expone ningun puerto a internet
+- Los archivos descargados se eliminan despues de procesarlos
+- El servidor web solo escucha en 127.0.0.1 (localhost)
+
+---
+
 ## Estructura del proyecto
 
 ```
 Saas documentacion/
   |
-  +-- Facturas OCR.bat          # Launcher: arranca todo con doble clic
-  +-- Cerrar Facturas OCR.bat   # Para los servidores
+  +-- Facturas OCR.bat              # Launcher: arranca todo con doble clic
+  +-- Cerrar Facturas OCR.bat       # Para los servidores
+  +-- Base de Datos Facturas.bat    # Abre el visor del vault en el navegador
   +-- README.md
   |
   +-- front/
-  |     +-- index.html          # Frontend web (dark mode, drag & drop)
+  |     +-- index.html              # Frontend web (dark mode, drag & drop)
+  |     +-- db.html                 # Base de datos de facturas
+  |     +-- vault.html              # Visor del vault de Obsidian
+  |     +-- gastos.html             # Dashboard de gastos mensuales
   |
   +-- invoice-processor/
-  |     +-- .env                # Config (OBSIDIAN_VAULT_PATH, PORT)
+  |     +-- .env                    # Config (rutas, tokens, IDs)
   |     +-- package.json
   |     |
   |     +-- src/
-  |     |     +-- index.js               # Express server + CORS + static files
-  |     |     +-- ocr_engine.py          # Motor OCR Python (EasyOCR + OpenCV)
-  |     |     +-- ocr-server.py          # Micro-servicio OCR HTTP alternativo
+  |     |     +-- index.js          # Express server (solo localhost) + Telegram boot
+  |     |     +-- ocr_engine.py     # Motor OCR Python (EasyOCR + OpenCV + regex)
+  |     |     +-- ocr-server.py     # Micro-servicio OCR HTTP alternativo
   |     |     |
   |     |     +-- routes/
-  |     |     |     +-- invoices.js      # API REST endpoints
+  |     |     |     +-- invoices.js # API REST para facturas
+  |     |     |     +-- vault.js    # API REST para leer el vault de Obsidian
   |     |     |
   |     |     +-- services/
-  |     |           +-- anthropic.js     # Puente Node -> Python OCR
-  |     |           +-- markdown.js      # Generador de markdown + Obsidian sync
-  |     |           +-- telegram.js      # Bot de Telegram para subir fotos desde movil
+  |     |           +-- anthropic.js   # Puente Node -> Python OCR
+  |     |           +-- markdown.js    # Generador markdown + sync Obsidian
+  |     |           +-- telegram.js    # Bot Telegram (fotos + /gastos)
   |     |
-  |     +-- src/output/                  # Copias locales de los markdown
-  |     +-- src/uploads/                 # Imagenes subidas temporalmente
-  |
-  +-- Apis/                              # API keys (Gemini, Anthropic)
+  |     +-- src/output/             # Copias locales de los markdown
+  |     +-- src/uploads/            # Imagenes temporales (se borran tras procesar)
 ```
 
 ---
 
 ## API REST
 
-Todos los endpoints estan en `http://localhost:3000/api/invoices/`
+Todos los endpoints estan en `http://localhost:3000`
+
+### Facturas
 
 | Metodo | Ruta | Descripcion |
 |--------|------|-------------|
@@ -248,127 +345,52 @@ Todos los endpoints estan en `http://localhost:3000/api/invoices/`
 | `GET /api/invoices/search?q=texto` | Buscar | Busca en el contenido |
 | `PUT /api/invoices/:id/title` | Cambiar titulo | `{ "title": "nuevo" }` |
 | `DELETE /api/invoices/:id` | Eliminar | Borra local y de Obsidian |
-| `GET /health` | Estado del servidor | `{ "status": "ok" }` |
+| `GET /health` | Estado | `{ "status": "ok" }` |
 
-### Ejemplo con curl
+### Vault
 
-```bash
-curl -X POST http://localhost:3000/api/invoices/ \
-  -F "document=@foto_ticket.jpg"
-```
-
-Respuesta:
-
-```json
-{
-  "id": "uuid-del-documento",
-  "filename": "uuid.md",
-  "data": {
-    "title": "Kantina Lekuona U.T.E.",
-    "invoiceNumber": "T-73800",
-    "date": "07/12/2025",
-    "sender": {
-      "name": "Kantina Lekuona U.T.E.",
-      "address": "Ugarritza Etorbidea 1, Errenteria, 20100",
-      "taxId": "U06975544"
-    },
-    "lineItems": [
-      { "description": "2 ZURITO KELLER", "quantity": 2, "unitPrice": 1.80, "total": 3.60 }
-    ],
-    "subtotal": 3.27,
-    "taxRate": "IVA 10%",
-    "taxAmount": 0.33,
-    "total": 3.60,
-    "currency": "EUR",
-    "paymentTerms": "Efectivo"
-  }
-}
-```
+| Metodo | Ruta | Descripcion |
+|--------|------|-------------|
+| `GET /api/vault/tree` | Arbol de archivos | Estructura completa del vault con metadata |
+| `GET /api/vault/note?path=ruta` | Leer nota | Contenido markdown de una nota |
+| `GET /api/vault/graph` | Grafo | Nodos y links entre notas (wikilinks) |
 
 ---
 
-## Bot de Telegram
+## Motor OCR: como funciona
 
-El bot permite subir fotos de tickets desde el movil. El flujo es:
+### Porque EasyOCR y no Tesseract
 
-```
-Foto en Telegram --> Bot Node.js --> OCR Python --> Obsidian
-                                                --> Respuesta con resumen
-```
-
-### Comandos
-
-| Comando | Descripcion |
-|---------|-------------|
-| `/start` | Muestra bienvenida y tu ID de usuario |
-| Enviar foto | Procesa el ticket con OCR |
-| Enviar documento | Acepta JPG, PNG, WebP y PDF |
-
-### Configuracion
-
-1. Crear un bot con [@BotFather](https://t.me/BotFather) en Telegram
-2. Copiar el token en `.env` como `TELEGRAM_BOT_TOKEN`
-3. Enviar `/start` al bot para obtener tu ID de usuario
-4. Poner tu ID en `.env` como `TELEGRAM_ALLOWED_USERS`
-
-El bot arranca automaticamente con el servidor Node.js. Si no hay token configurado, simplemente no arranca (sin errores).
-
-### Seguridad
-
-- Solo los usuarios en `TELEGRAM_ALLOWED_USERS` pueden usar el bot
-- Si la lista esta vacia, el bot acepta mensajes de cualquiera
-- Los archivos descargados se eliminan despues de procesarlos
-
----
-
-## Motor OCR: como funciona por dentro
-
-### Porque no Tesseract
-
-Tesseract es el OCR open source mas conocido, pero falla con tickets termicos de bajo contraste. Lo probamos y el resultado era ilegible. El papel termico se desvanece y Tesseract no puede con ello.
-
-### Porque EasyOCR
-
-EasyOCR usa redes neuronales (CRAFT para deteccion + CRNN para reconocimiento) que manejan mucho mejor el texto degradado. Ademas:
-
-- Soporta espanol de serie
-- Tiene parametro `contrast_ths` para texto de bajo contraste
-- Funciona en GPU con CUDA (3-5x mas rapido)
-- Es pip install, sin binarios externos
-
-### Preprocesado con OpenCV
-
-La clave del rendimiento esta en el preprocesado. El motor genera **3 variantes** de cada imagen:
-
-1. **CLAHE + threshold adaptativo**: Ecualiza contraste por bloques. Ideal para tickets donde una parte esta mas oscura que otra.
-
-2. **Contraste lineal alto + Otsu**: Estira los niveles de gris agresivamente y deja que Otsu calcule el umbral optimo. Captura texto muy tenue.
-
-3. **CLAHE fuerte + threshold fijo**: Mas agresivo que la variante 1. Captura detalles que las otras pierden.
-
-EasyOCR procesa las 3 variantes y el motor **fusiona los resultados**: agrupa detecciones por posicion (Y,X) y elige la de mayor confianza para cada zona.
-
-### Post-procesado con regex
-
-Los caracteres confundidos por el OCR se corrigen con reglas:
-
-- `Lekuony` -> `Lekuona` (nombres vascos)
-- `Etorbidea` se detecta aunque este roto en `Et orb idea`
-- `Efec-iv)` -> `Efectivo`
-- NIFs se buscan con patron `[A-Z]\d{8}`
-- Importes se extraen y se verifican: `total = subtotal + IVA`
+Tesseract falla con tickets termicos de bajo contraste. Lo probamos y el resultado era ilegible. EasyOCR usa redes neuronales (CRAFT + CRNN) que manejan mucho mejor el texto degradado.
 
 ### Porque no un LLM local
 
-Probamos Qwen2.5-VL-7B para leer la imagen directamente. Resultado: alucino todos los datos. Los LLMs de 7B no tienen capacidad suficiente para OCR fiable. Los de 72B necesitan 48+ GB de RAM.
+Probamos Qwen2.5-VL-7B. Resultado: alucino todos los datos. Los LLMs de 7B no son fiables para OCR. Los de 72B necesitan 48+ GB de RAM.
 
-La combinacion EasyOCR (lee los caracteres) + regex (estructura los datos) funciona mejor que cualquier LLM local en este hardware.
+La combinacion EasyOCR + regex funciona mejor que cualquier LLM local en hardware consumer.
+
+### Preprocesado con OpenCV
+
+El motor genera **3 variantes** de cada imagen:
+
+1. **CLAHE + threshold adaptativo**: Ecualiza contraste por bloques
+2. **Contraste lineal alto + Otsu**: Estira niveles de gris agresivamente
+3. **CLAHE fuerte + threshold fijo**: Mas agresivo, captura detalles sutiles
+
+EasyOCR procesa las 3 y el motor fusiona resultados: elige la mejor deteccion por zona.
+
+### Post-procesado con regex
+
+- Corrige caracteres confundidos por el OCR
+- Busca NIFs con patron `[A-Z]\d{8}`
+- Extrae importes y verifica: `total = subtotal + IVA`
+- Recalcula si no cuadra
 
 ---
 
 ## Formato de salida en Obsidian
 
-Cada factura se guarda como un archivo markdown con frontmatter YAML:
+Cada factura se guarda como markdown con frontmatter YAML:
 
 ```yaml
 ---
@@ -384,16 +406,17 @@ status: "procesada"
 ---
 ```
 
-El body contiene tablas markdown con los detalles del emisor, conceptos, totales y forma de pago. Obsidian los indexa automaticamente y aparecen en el Dashboard.
+El body contiene tablas markdown con emisor, conceptos, totales y forma de pago. Obsidian los indexa automaticamente.
 
 ---
 
 ## Limitaciones conocidas
 
-- **Tickets muy desvanecidos**: Si el ticket es casi blanco, el OCR no puede leer nada. Esto es una limitacion fisica, no del software.
-- **Fechas**: Es el campo mas dificil de leer. Los digitos de la fecha suelen estar en la zona mas tenue del ticket.
-- **Algun digito del NIF**: El OCR puede confundir 0 y 9, 7 y 2. Los importes suelen leerse bien porque son mas grandes.
-- **GPU**: Sin GPU funciona igual pero 3-5x mas lento (30-60 seg en vez de 10-15 seg por ticket).
+- **Telegram fotos vs documentos**: Enviar siempre como documento/archivo, no como foto. Telegram comprime las fotos y el OCR falla.
+- **Tickets muy desvanecidos**: Si el ticket es casi blanco, ningun OCR puede leerlo.
+- **Fechas**: Es el campo mas dificil. Los digitos suelen estar en la zona mas tenue.
+- **Algun digito del NIF**: El OCR puede confundir 0/9, 7/2. Los importes suelen leerse mejor.
+- **GPU**: Sin GPU funciona igual pero 3-5x mas lento (30-60 seg vs 10-15 seg por ticket).
 
 ---
 
@@ -401,19 +424,11 @@ El body contiene tablas markdown con los detalles del emisor, conceptos, totales
 
 ### El .bat dice "Node.js no encontrado"
 
-La ruta de node.exe depende de como lo instalaste. Busca donde esta:
-
 ```cmd
 where node
 ```
 
-O busca manualmente:
-
-```cmd
-dir /s /b C:\Users\TU_USUARIO\node.exe
-```
-
-Edita la linea `set "NODE=..."` en `Facturas OCR.bat` con la ruta correcta.
+Edita `set "NODE=..."` en `Facturas OCR.bat` con la ruta correcta.
 
 ### CUDA no disponible
 
@@ -421,27 +436,33 @@ Edita la linea `set "NODE=..."` en `Facturas OCR.bat` con la ruta correcta.
 python -c "import torch; print(torch.cuda.is_available())"
 ```
 
-Si dice `False`:
-1. Verifica que tienes GPU NVIDIA: `nvidia-smi`
-2. Reinstala PyTorch con CUDA: `pip install torch --index-url https://download.pytorch.org/whl/cu124`
-3. Si no tienes GPU NVIDIA, edita `ocr_engine.py` linea 20: cambia `gpu=True` a `gpu=False`
+Si `False`:
+1. Verifica GPU: `nvidia-smi`
+2. Reinstala PyTorch: `pip install torch --index-url https://download.pytorch.org/whl/cu124`
+3. Sin GPU: edita `ocr_engine.py`, cambia `gpu=True` a `gpu=False`
 
-### El OCR no arranca (paso 3 se queda colgado)
+### NumPy error de compatibilidad
 
-Abre una terminal y ejecuta manualmente:
+```bash
+pip install "numpy<2" opencv-python-headless --force-reinstall
+```
+
+### El OCR no arranca
 
 ```bash
 conda activate ocr
 python invoice-processor/src/ocr_engine.py --server
 ```
 
-Mira el error que sale. Los mas comunes:
-- `ModuleNotFoundError`: falta instalar algo (`pip install easyocr opencv-python-headless`)
-- `CUDA error`: problema de drivers GPU, cambia a `gpu=False`
+Errores comunes:
+- `ModuleNotFoundError`: `pip install easyocr opencv-python-headless`
+- `CUDA error`: cambia a `gpu=False`
 
-### Los importes no cuadran
+### El bot de Telegram no recibe mensajes
 
-El motor valida automaticamente que `total = subtotal + IVA`. Si el OCR lee mal un importe, el motor recalcula. Pero si lee mal los tres, no puede corregirlo.
+1. Verificar token: el bot debe responder a `https://api.telegram.org/bot<TOKEN>/getMe`
+2. Si revocaste el token en BotFather, actualizar `.env` y reiniciar
+3. Solo un proceso puede hacer polling del mismo bot a la vez
 
 ---
 
@@ -456,5 +477,7 @@ El motor valida automaticamente que `total = subtotal + IVA`. Si el OCR lee mal 
 | Express.js | 4.x | API REST |
 | Sharp | 0.33+ | Procesado de imagen en Node |
 | Multer | 1.x | Upload de archivos |
-| Obsidian | - | Vault de documentos |
 | node-telegram-bot-api | 0.67 | Bot de Telegram |
+| Obsidian | - | Vault de documentos |
+| dotenv | 16.x | Variables de entorno |
+| uuid | 11.x | Identificadores unicos |

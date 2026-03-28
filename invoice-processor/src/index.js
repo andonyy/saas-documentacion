@@ -33,8 +33,11 @@ app.get('/health', (req, res) => {
 
 app.use('/api/invoices', invoiceRoutes);
 
+const vaultRoutes = require('./routes/vault');
+app.use('/api/vault', vaultRoutes);
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, '127.0.0.1', () => {
   console.log(`Invoice processor running on http://localhost:${PORT}`);
 
   // Arrancar Telegram bot si hay token

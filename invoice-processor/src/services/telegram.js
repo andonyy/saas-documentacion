@@ -31,9 +31,16 @@ function startTelegramBot() {
   bot.onText(/\/start/, (msg) => {
     if (!isAllowed(msg, allowedUsers)) return;
     bot.sendMessage(msg.chat.id,
-      `*Facturas OCR*\n\nEnviame una foto de un ticket o factura y la proceso automaticamente.\n\nEl resultado se guarda en Obsidian.\n\nTu ID: \`${msg.from.id}\``,
+      `*Facturas OCR*\n\nEnviame una foto de un ticket o factura y la proceso automaticamente.\n\nEl resultado se guarda en Obsidian.\n\n*Comandos:*\n/gastos - Resumen de gastos del mes\n\nTu ID: \`${msg.from.id}\``,
       { parse_mode: 'Markdown' }
     );
+  });
+
+  // /gastos - Resumen de gastos del mes
+  bot.onText(/\/gastos/, (msg) => {
+    if (!isAllowed(msg, allowedUsers)) return;
+    const summary = getSpendingSummary();
+    bot.sendMessage(msg.chat.id, summary, { parse_mode: 'Markdown' });
   });
 
   // Foto recibida
@@ -184,6 +191,123 @@ function formatSummary(data) {
   if (data.total) lines.push(`*Total: ${data.total} ${data.currency || 'EUR'}*`);
   if (data.paymentTerms) lines.push(`Pago: ${data.paymentTerms}`);
   lines.push('\nGuardado en Obsidian');
+  return lines.join('\n');
+}
+
+function getSpendingSummary() {
+  const VAULT_DIR = process.env.OBSIDIAN_VAULT_PATH || path.join(require('os').homedir(), 'ObsidianVault', '30 Documentos fuente');
+  if (!fs.existsSync(VAULT_DIR)) return 'No se encontro la carpeta de documentos.';
+
+  const MONTH_NAMES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  const files = fs.readdirSync(VAULT_DIR).filter(f => f.endsWith('.md'));
+  const invoices = [];
+
+  for (const file of files) {
+    const content = fs.readFileSync(path.join(VAULT_DIR, file), 'utf-8');
+    const fm = {};
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (fmMatch) {
+      fmMatch[1].split('\n').forEach(line => {
+        const m = line.match(/^(\w[\w_]*)\s*:\s*(.+)/);
+        if (m) fm[m[1]] = m[2].trim().replace(/^"(.*)"$/, '$1');
+      });
+    }
+
+    const total = parseFloat(fm.total) || 0;
+    if (total <= 0) continue;
+
+    let dateObj = null;
+    const dateStr = fm.fecha_documento || '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      dateObj = new Date(dateStr);
+    } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+      const [d, m, y] = dateStr.split('/');
+      dateObj = new Date(`${y}-${m}-${d}`);
+    }
+
+    invoices.push({
+      sender: fm.sender || file.replace('.md', ''),
+      total,
+      currency: fm.currency || 'EUR',
+      date: dateStr,
+      dateObj,
+      month: dateObj ? dateObj.getMonth() : -1,
+      year: dateObj ? dateObj.getFullYear() : -1
+    });
+  }
+
+  // Este mes
+  const thisMonth = invoices.filter(i => i.month === currentMonth && i.year === currentYear);
+  const thisMonthTotal = thisMonth.reduce((s, i) => s + i.total, 0);
+
+  // Mes anterior
+  const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+  const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+  const lastMonth = invoices.filter(i => i.month === prevMonth && i.year === prevYear);
+  const lastMonthTotal = lastMonth.reduce((s, i) => s + i.total, 0);
+
+  // Total general
+  const grandTotal = invoices.reduce((s, i) => s + i.total, 0);
+
+  // Construir mensaje
+  const lines = [];
+  lines.push('*Resumen de gastos*\n');
+
+  // Este mes
+  lines.push(`*${MONTH_NAMES[currentMonth]} ${currentYear}*`);
+  if (thisMonth.length > 0) {
+    thisMonth.sort((a, b) => (b.dateObj || 0) - (a.dateObj || 0));
+    thisMonth.forEach(inv => {
+      lines.push(`  ${inv.sender}: *${inv.total.toFixed(2)}* ${inv.currency}`);
+    });
+    lines.push(`\`Total: ${thisMonthTotal.toFixed(2)} EUR\` (${thisMonth.length} fact.)`);
+  } else {
+    lines.push('  Sin facturas');
+  }
+
+  // Mes anterior
+  lines.push(`\n*${MONTH_NAMES[prevMonth]} ${prevYear}*`);
+  if (lastMonth.length > 0) {
+    lines.push(`\`Total: ${lastMonthTotal.toFixed(2)} EUR\` (${lastMonth.length} fact.)`);
+  } else {
+    lines.push('  Sin facturas');
+  }
+
+  // Comparativa
+  if (thisMonthTotal > 0 && lastMonthTotal > 0) {
+    const diff = thisMonthTotal - lastMonthTotal;
+    const pct = ((diff / lastMonthTotal) * 100).toFixed(0);
+    const arrow = diff > 0 ? 'mas' : 'menos';
+    lines.push(`\n${Math.abs(diff).toFixed(2)} EUR ${arrow} que el mes pasado (${pct > 0 ? '+' : ''}${pct}%)`);
+  }
+
+  // Acumulado
+  lines.push(`\n*Acumulado total:* ${grandTotal.toFixed(2)} EUR (${invoices.length} fact.)`);
+
+  // Ticket medio
+  if (invoices.length > 0) {
+    const avg = grandTotal / invoices.length;
+    lines.push(`*Ticket medio:* ${avg.toFixed(2)} EUR`);
+  }
+
+  // Top 3
+  const bySender = {};
+  invoices.forEach(i => {
+    if (!bySender[i.sender]) bySender[i.sender] = 0;
+    bySender[i.sender] += i.total;
+  });
+  const top = Object.entries(bySender).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  if (top.length > 0) {
+    lines.push('\n*Top gastos:*');
+    top.forEach(([name, total], i) => {
+      lines.push(`  ${i + 1}. ${name}: ${total.toFixed(2)} EUR`);
+    });
+  }
+
   return lines.join('\n');
 }
 
